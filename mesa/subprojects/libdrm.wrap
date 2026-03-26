@@ -1,0 +1,12 @@
+[wrap-file]
+directory = libdrm-2.4.120
+source_url = https://dri.freedesktop.org/libdrm/libdrm-2.4.120.tar.xz
+source_filename = libdrm-2.4.120.tar.xz
+source_hash = 3bf55363f76c7250946441ab51d3a6cc0ae518055c0ff017324ab76cdefb327a
+
+[provide]
+libdrm = ext_libdrm
+libdrm_intel = ext_libdrm_intel
+libdrm_amdgpu = ext_libdrm_amdgpu
+libdrm_radeon = ext_libdrm_radeon
+libdrm_nouveau = ext_libdrm_nouveau
