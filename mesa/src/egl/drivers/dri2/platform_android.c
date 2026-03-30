@@ -675,7 +675,8 @@ droid_swap_buffers(_EGLDisplay *disp, _EGLSurface *draw)
 
    /* Check if we need to use the virgl readback workaround */
    if (ENABLE_VIRGL_READBACK && dri2_dpy->driver_name &&
-       strcmp(dri2_dpy->driver_name, "virgl") == 0) {
+       strcmp(dri2_dpy->driver_name, "virgl") == 0 &&
+       dri2_surf->window != NULL) {
       return droid_swap_buffers_virgl_readback(disp, draw);
    }
 
@@ -717,24 +718,37 @@ droid_swap_buffers_virgl_readback(_EGLDisplay *disp, _EGLSurface *draw)
 {
    struct dri2_egl_surface *dri2_surf = dri2_egl_surface(draw);
 
+   /* Validate surface and window */
+   if (!dri2_surf || !dri2_surf->window) {
+      _eglLog(_EGL_WARNING, "Virgl readback: Invalid surface or window");
+      return EGL_FALSE;
+   }
+
    /* Ensure we have a buffer to work with */
    if (update_buffers(dri2_surf) < 0) {
+      _eglLog(_EGL_WARNING, "Virgl readback: Failed to update buffers");
       return EGL_FALSE;
    }
 
    if (!dri2_surf->buffer) {
-      _eglLog(_EGL_WARNING, "No buffer available for readback");
+      _eglLog(_EGL_WARNING, "Virgl readback: No buffer available");
       return EGL_FALSE;
    }
 
-   /* For virgl, we use the standard buffer queue mechanism but with a
-    * modified approach that ensures proper synchronization */
+   /* For virgl, we use the standard buffer queue mechanism with proper validation */
    
    /* Ensure we have a back buffer */
    if (!dri2_surf->dri_image_back) {
       if (get_back_bo(dri2_surf) < 0) {
+         _eglLog(_EGL_WARNING, "Virgl readback: Failed to get back buffer");
          return EGL_FALSE;
       }
+   }
+   
+   /* Validate the back buffer */
+   if (!dri2_surf->dri_image_back) {
+      _eglLog(_EGL_WARNING, "Virgl readback: Back buffer is null");
+      return EGL_FALSE;
    }
    
    /* Flush the drawable to ensure all rendering is complete */
@@ -742,7 +756,10 @@ droid_swap_buffers_virgl_readback(_EGLDisplay *disp, _EGLSurface *draw)
    
    /* Queue the buffer using the standard Android mechanism */
    if (dri2_surf->buffer) {
-      droid_window_enqueue_buffer(disp, dri2_surf);
+      if (!droid_window_enqueue_buffer(disp, dri2_surf)) {
+         _eglLog(_EGL_WARNING, "Virgl readback: Failed to enqueue buffer");
+         return EGL_FALSE;
+      }
    }
    
    /* Update buffer age and state */
@@ -754,7 +771,7 @@ droid_swap_buffers_virgl_readback(_EGLDisplay *disp, _EGLSurface *draw)
    if (dri2_surf->back)
       dri2_surf->back->age = 1;
    
-   _eglLog(_EGL_DEBUG, "Virgl readback path used for swap buffers");
+   _eglLog(_EGL_DEBUG, "Virgl readback path successfully used for swap buffers");
    
    return EGL_TRUE;
 }
