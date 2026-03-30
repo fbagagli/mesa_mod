@@ -1,0 +1,5 @@
+display_name = "Sandboxed Agent"
+description = "Strictly scoped to the current directory with mandatory approvals."
+safety = "safe"
+auto_approve = false
+enabled_tools = ["read_file", "write_file", "search_replace", "grep"]
