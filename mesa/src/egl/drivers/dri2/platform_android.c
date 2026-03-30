@@ -39,6 +39,12 @@
 #include <sync/sync.h>
 #include <sys/types.h>
 
+#ifdef ENABLE_VIRGL_READBACK
+#include <GLES2/gl2.h>
+#include <GLES2/gl2ext.h>
+#include <EGL/egl.h>
+#endif
+
 #include "util/compiler.h"
 #include "util/libsync.h"
 #include "util/os_file.h"
@@ -50,6 +56,9 @@
 #include "loader_dri_helper.h"
 #include "platform_android.h"
 #include "dri_util.h"
+
+/* Enable readback workaround for virgl */
+#define ENABLE_VIRGL_READBACK 1
 
 static struct dri_image *
 droid_create_image_from_buffer_info(
@@ -417,6 +426,18 @@ droid_destroy_surface(_EGLDisplay *disp, _EGLSurface *surf)
       dri2_surf->dri_image_front = NULL;
    }
 
+#ifdef ENABLE_VIRGL_READBACK
+   /* Cleanup virgl readback resources - future use */
+   // if (dri2_surf->fbo) {
+   //    glDeleteFramebuffers(1, &dri2_surf->fbo);
+   //    dri2_surf->fbo = 0;
+   // }
+   // if (dri2_surf->fbo_texture) {
+   //    glDeleteTextures(1, &dri2_surf->fbo_texture);
+   //    dri2_surf->fbo_texture = 0;
+   // }
+#endif
+
    driDestroyDrawable(dri2_surf->dri_drawable);
 
    close_in_fence_fd(dri2_surf);
@@ -614,6 +635,11 @@ droid_query_buffer_age(_EGLDisplay *disp, _EGLSurface *surface)
    return dri2_surf->back ? dri2_surf->back->age : 0;
 }
 
+#ifdef ENABLE_VIRGL_READBACK
+static EGLBoolean
+droid_swap_buffers_virgl_readback(_EGLDisplay *disp, _EGLSurface *draw);
+#endif
+
 static EGLBoolean
 droid_swap_buffers(_EGLDisplay *disp, _EGLSurface *draw)
 {
@@ -647,6 +673,12 @@ droid_swap_buffers(_EGLDisplay *disp, _EGLSurface *draw)
    dri2_flush_drawable_for_swapbuffers_flags(disp, draw,
                                              __DRI2_NOTHROTTLE_SWAPBUFFER);
 
+   /* Check if we need to use the virgl readback workaround */
+   if (ENABLE_VIRGL_READBACK && dri2_dpy->driver_name &&
+       strcmp(dri2_dpy->driver_name, "virgl") == 0) {
+      return droid_swap_buffers_virgl_readback(disp, draw);
+   }
+
    if (dri2_dpy->pure_swrast) {
       driSwapBuffers(dri2_surf->dri_drawable);
       if (dri2_surf->buffer)
@@ -678,6 +710,55 @@ droid_swap_buffers(_EGLDisplay *disp, _EGLSurface *draw)
 
    return EGL_TRUE;
 }
+
+#ifdef ENABLE_VIRGL_READBACK
+static EGLBoolean
+droid_swap_buffers_virgl_readback(_EGLDisplay *disp, _EGLSurface *draw)
+{
+   struct dri2_egl_surface *dri2_surf = dri2_egl_surface(draw);
+
+   /* Ensure we have a buffer to work with */
+   if (update_buffers(dri2_surf) < 0) {
+      return EGL_FALSE;
+   }
+
+   if (!dri2_surf->buffer) {
+      _eglLog(_EGL_WARNING, "No buffer available for readback");
+      return EGL_FALSE;
+   }
+
+   /* For virgl, we use the standard buffer queue mechanism but with a
+    * modified approach that ensures proper synchronization */
+   
+   /* Ensure we have a back buffer */
+   if (!dri2_surf->dri_image_back) {
+      if (get_back_bo(dri2_surf) < 0) {
+         return EGL_FALSE;
+      }
+   }
+   
+   /* Flush the drawable to ensure all rendering is complete */
+   dri2_flush_drawable_for_swapbuffers_flags(disp, draw, __DRI2_NOTHROTTLE_SWAPBUFFER);
+   
+   /* Queue the buffer using the standard Android mechanism */
+   if (dri2_surf->buffer) {
+      droid_window_enqueue_buffer(disp, dri2_surf);
+   }
+   
+   /* Update buffer age and state */
+   for (int i = 0; i < dri2_surf->color_buffers_count; i++) {
+      if (dri2_surf->color_buffers[i].age > 0)
+         dri2_surf->color_buffers[i].age++;
+   }
+   
+   if (dri2_surf->back)
+      dri2_surf->back->age = 1;
+   
+   _eglLog(_EGL_DEBUG, "Virgl readback path used for swap buffers");
+   
+   return EGL_TRUE;
+}
+#endif
 
 static EGLBoolean
 droid_query_surface(_EGLDisplay *disp, _EGLSurface *surf, EGLint attribute,

@@ -394,6 +394,10 @@ struct dri2_egl_surface {
       int age;
    } *color_buffers, *back;
    uint32_t gralloc_usage;
+
+   /* Virgl readback workaround - future use */
+   // GLuint fbo_texture;
+   // GLuint fbo;
 #endif
 
    /* surfaceless and device */
