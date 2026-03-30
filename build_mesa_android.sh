@@ -9,11 +9,6 @@ NDK_DIR="${ROOT_DIR}/android-ndk-${NDK_VERSION}"
 CROSS_FILE="${ROOT_DIR}/android-aarch64.ini"
 API_LEVEL="31"
 
-# 1. Prepare Ubuntu 24.04 Environment
-sudo apt-get update
-sudo apt-get install -y wget unzip python3-pip ninja-build pkg-config \
-    python3-mako flex bison libelf-dev
-
 # 2. Download and Extract Android NDK r27d
 if [ ! -d "${NDK_DIR}" ]; then
     echo "Downloading Android NDK ${NDK_VERSION}..."
